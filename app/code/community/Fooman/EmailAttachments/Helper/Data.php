@@ -1,5 +1,4 @@
 <?php
-
 /**
  * @author     Kristof Ringleff
  * @package    Fooman_EmailAttachments
@@ -11,37 +10,95 @@
 
 class Fooman_EmailAttachments_Helper_Data extends Mage_Core_Helper_Abstract
 {
+    const LOG_FILE_NAME         = 'fooman_emailattachments.log';
+    const PDF_SOURCE_MAGENTO    = 'magento';
+    const PDF_SOURCE_HO_PDF     = 'ho_pdf';
 
-    const LOG_FILE_NAME='fooman_emailattachments.log';
+    /** @var string */
+    private $source = self::PDF_SOURCE_MAGENTO;
+
+    public function __construct()
+    {
+        if (Mage::helper('core')->isModuleEnabled('Ho_Pdf')) {
+            // Attach Ho_Pdf file to email.
+            $this->source = self::PDF_SOURCE_HO_PDF;
+        }
+    }
 
     /**
-     * render pdf and attach to email
+     * Fetch/Create Pdf from defined source.
      *
-     * @param        $pdf
-     * @param        $mailObj
-     * @param string $name
+     * @param           $object
+     * @param   string  $type
      *
-     * @return mixed
+     * @return  string|Zend_Pdf
      */
-    public function addAttachment($pdf, $mailObj, $name = "order")
+    public function getPdf($object, $type = '')
+    {
+        if ($this->source === self::PDF_SOURCE_HO_PDF) {
+            $method = 'generate'.ucfirst($type);
+            $pdf    = Mage::helper('ho_pdf/pdf')->$method($object);
+        } else {
+            switch (true) {
+                case $object instanceof Mage_Sales_Model_Order:
+                    $pdf = Mage::getModel('emailattachments/order_pdf_order')->getPdf(array($object));
+                    break;
+                case $object instanceof Mage_Sales_Model_Order_Invoice:
+                    $pdf = Mage::getModel('sales/order_pdf_invoice')->getPdf(array($object));
+                    break;
+                case $object instanceof Mage_Sales_Model_Order_Shipment:
+                    $pdf = Mage::getModel('sales/order_pdf_shipment')->getPdf(array($object));
+                    break;
+                case $object instanceof Mage_Sales_Model_Order_Creditmemo:
+                    $pdf = Mage::getModel('sales/order_pdf_creditmemo')->getPdf(array($object));
+                    break;
+                default:
+                    $pdf = null;
+                    Mage::throwException("Cannot create pdf from instance of '".get_class($object)."'");
+            }
+        }
+
+        return $pdf;
+    }
+
+    /**
+     * render pdf and attach to email.
+     *
+     * @param           $pdf
+     * @param           $mailObj
+     * @param   string  $name
+     *
+     * @throws  Exception
+     * @return  mixed
+     */
+    public function addAttachment($pdf, $mailObj, $name = 'order')
     {
         try {
             $this->debug('ADDING ATTACHMENT: ' . $name);
-            $file = $pdf->render();
-            if (!($mailObj instanceof Zend_Mail) && !($mailObj instanceof Mandrill_Message)) {
+
+            if ($this->source === self::PDF_SOURCE_HO_PDF) {
+                $file = file_get_contents($pdf);
+            } else {
+                $file = $pdf->render();
+            }
+
+            if (! ($mailObj instanceof Zend_Mail) && ! ($mailObj instanceof Mandrill_Message)) {
                 $mailObj = $mailObj->getMail();
             }
+
             $mailObj->createAttachment(
                 $file,
                 'application/pdf',
                 Zend_Mime::DISPOSITION_ATTACHMENT,
                 Zend_Mime::ENCODING_BASE64,
-                $name . '.pdf'
+                $name.'.pdf'
             );
+
             $this->debug('FINISHED ADDING ATTACHMENT: ' . $name);
         } catch (Exception $e) {
             Mage::log('Caught error while attaching pdf:' . $e->getMessage());
         }
+
         return $mailObj;
     }
 
@@ -49,10 +106,10 @@ class Fooman_EmailAttachments_Helper_Data extends Mage_Core_Helper_Abstract
      * attach file to email
      * supported types: pdf
      *
-     * @param        $file
-     * @param        $mailObj
+     * @param   $file
+     * @param   $mailObj
      *
-     * @return mixed
+     * @return  mixed
      */
     public function addFileAttachment($file, $mailObj)
     {
@@ -75,10 +132,10 @@ class Fooman_EmailAttachments_Helper_Data extends Mage_Core_Helper_Abstract
                 );
             }
             $this->debug('FINISHED ADDING ATTACHMENT: ' . $file);
-
         } catch (Exception $e) {
             Mage::log('Caught error while attaching pdf:' . $e->getMessage());
         }
+
         return $mailObj;
     }
 
@@ -150,9 +207,9 @@ class Fooman_EmailAttachments_Helper_Data extends Mage_Core_Helper_Abstract
     }
 
     /**
-     * if in debug mode send message to logs
+     * if in debug mode send message to logs.
      *
-     * @param $msg
+     * @param   $msg
      */
     public function debug($msg)
     {
@@ -165,7 +222,7 @@ class Fooman_EmailAttachments_Helper_Data extends Mage_Core_Helper_Abstract
     /**
      * are we debugging
      *
-     * @return bool
+     * @return  bool
      */
     public function isDebugMode()
     {
@@ -175,7 +232,7 @@ class Fooman_EmailAttachments_Helper_Data extends Mage_Core_Helper_Abstract
     /**
      * add print button to block
      *
-     * @param $block
+     * @param   $block
      */
     public function addButton($block)
     {
@@ -191,10 +248,9 @@ class Fooman_EmailAttachments_Helper_Data extends Mage_Core_Helper_Abstract
     /**
      * return url to print single order from order > view
      *
-     * @param void
-     * @access protected
+     * @param   $block
      *
-     * @return string
+     * @return  string
      */
     protected function getPrintUrl($block)
     {
@@ -205,19 +261,20 @@ class Fooman_EmailAttachments_Helper_Data extends Mage_Core_Helper_Abstract
     }
 
     /**
-     * get array of email addresses
+     * get array of email addresses.
      *
-     * @param $configPath
-     * @param $storeId
+     * @param   $configPath
+     * @param   $storeId
      *
-     * @return array|bool
+     * @return  array|bool
      */
     public function getEmails($configPath, $storeId)
     {
         $data = Mage::getStoreConfig($configPath, $storeId);
-        if (!empty($data)) {
+        if (! empty($data)) {
             return explode(',', $data);
         }
+
         return false;
     }
 
