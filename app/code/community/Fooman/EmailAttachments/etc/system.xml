@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <config>
     <sections>
-        <foomancommon>
+<!--        <foomancommon>
             <groups>
                 <extensions>
                     <fields>
@@ -17,7 +17,7 @@
                     </fields>
                 </extensions>
             </groups>
-        </foomancommon>
+        </foomancommon> -->
         <sales_email>
             <groups>
                 <order>
